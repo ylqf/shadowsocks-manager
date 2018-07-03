@@ -1,5 +1,9 @@
 <md-tabs md-dynamic-height md-border-bottom>
-    <md-tab ng-repeat="payType in payTypes" label="{{payType.name}}" md-on-select="selectPayType(payType.name)">
+    <md-tab ng-repeat="payType in payTypes"
+            label="{{payType.name}}"
+            md-on-select="selectPayType(payType.name)">
+    </md-tab>
+</md-tabs>
 <div ng-show="orders.length">
     <md-card>
         <md-list>
@@ -37,7 +41,5 @@
         <md-progress-circular md-mode="indeterminate" class="md-accent"></md-progress-circular>
     </div>
     <div flex style="height: 180px;"></div>
-</div> 
-    </md-tab>
-</md-tabs>
+</div>
 

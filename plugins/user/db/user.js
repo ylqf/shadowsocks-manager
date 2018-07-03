@@ -1,15 +1,15 @@
-'use strict';
-
 const knex = appRequire('init/knex').knex;
 const tableName = 'user';
 
-const config = appRequire('services/config').all();
 const createTable = async() => {
-  if(config.empty) {
-    await knex.schema.dropTableIfExists(tableName);
-  }
   const exist = await knex.schema.hasTable(tableName);
   if(exist) {
+    const hasColumnGroup = await knex.schema.hasColumn(tableName, 'group');
+    if(!hasColumnGroup) {
+      await knex.schema.table(tableName, function(table) {
+        table.integer('group').defaultTo(0);
+      });
+    }
     return;
   }
   return knex.schema.createTableIfNotExists(tableName, function(table) {
@@ -23,6 +23,7 @@ const createTable = async() => {
     table.bigInteger('lastLogin');
     table.string('resetPasswordId');
     table.bigInteger('resetPasswordTime');
+    table.integer('group').defaultTo(0);
   });
 };
 

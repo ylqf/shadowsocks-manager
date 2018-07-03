@@ -1,13 +1,15 @@
 const knex = appRequire('init/knex').knex;
 const tableName = 'account_plugin';
 
-const config = appRequire('services/config').all();
 const createTable = async() => {
-  if(config.empty) {
-    await knex.schema.dropTableIfExists(tableName);
-  }
   const exist = await knex.schema.hasTable(tableName);
   if(exist) {
+    const hasSubscribe = await knex.schema.hasColumn(tableName, 'subscribe');
+    if(!hasSubscribe) {
+      await knex.schema.table(tableName, function(table) {
+        table.string('subscribe');
+      });
+    }
     return;
   }
   return knex.schema.createTableIfNotExists(tableName, function(table) {
@@ -18,8 +20,10 @@ const createTable = async() => {
     table.integer('port').unique();
     table.string('password');
     table.string('data');
+    table.string('subscribe');
     table.integer('status');
     table.integer('autoRemove').defaultTo(0);
+    table.integer('multiServerFlow').defaultTo(0);
   });
 };
 

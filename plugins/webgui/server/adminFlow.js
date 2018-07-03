@@ -4,7 +4,7 @@ const knex = appRequire('init/knex').knex;
 
 exports.getServerFlow = (req, res) => {
   const serverId = req.params.serverId;
-  const port = req.query.port;
+  const accountId = req.query.accountId;
   const type = req.query.type;
   const time = req.query.time || Date.now();
   let timeArray = [];
@@ -30,8 +30,8 @@ exports.getServerFlow = (req, res) => {
     }
   }
   let getFlow;
-  if(port) {
-    getFlow = flow.getServerPortFlow(serverId, +port, timeArray);
+  if(accountId) {
+    getFlow = flow.getServerPortFlow(serverId, +accountId, timeArray);
   } else {
     getFlow = flow.getServerFlow(serverId, timeArray);
   }
@@ -94,10 +94,10 @@ exports.getServerUserFlow = (req, res) => {
 
 exports.getServerPortFlow = (req, res) => {
   const serverId = +req.params.serverId;
-  const port = +req.params.port;
+  const accountId = +req.params.accountId;
   let account = null;
   knex('account_plugin').select().where({
-    port,
+    id: accountId,
   }).then(success => {
     if(!success.length) {
       return Promise.reject('account not found');
@@ -120,16 +120,7 @@ exports.getServerPortFlow = (req, res) => {
           i++;
         }
       }
-      return knex('webguiSetting').select().where({ key: 'system' })
-      .then(success => {
-        if(!success.length) {
-          return Promise.reject('settings not found');
-        }
-        success[0].value = JSON.parse(success[0].value);
-        return success[0].value.multiServerFlow;
-      }).then(isMultiServerFlow => {
-        return flow.getServerPortFlow(serverId, port, timeArray, isMultiServerFlow);
-      });
+      return flow.getServerPortFlow(serverId, accountId, timeArray, account.multiServerFlow);
     } else {
       return [ 0 ];
     }
@@ -168,8 +159,19 @@ exports.getAccountServerFlow = (req, res) => {
 
 exports.getServerPortLastConnect = (req, res) => {
   const serverId = +req.params.serverId;
-  const port = +req.params.port;
-  flow.getlastConnectTime(serverId, port)
+  const accountId = +req.params.accountId;
+  flow.getlastConnectTime(serverId, accountId)
+  .then(success => {
+    res.send(success);
+  }).catch(err => {
+    console.log(err);
+    res.status(403).end();
+  });
+};
+
+exports.getTopFlow = (req, res) => {
+  const group = req.adminInfo.id === 1 ? -1 : req.adminInfo.group;
+  flow.getTopFlow(group)
   .then(success => {
     res.send(success);
   }).catch(err => {

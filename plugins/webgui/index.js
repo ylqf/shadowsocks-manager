@@ -1,5 +1,3 @@
-'use strict';
-
 const log4js = require('log4js');
 const logger = log4js.getLogger('webgui');
 const expressLogger = log4js.getLogger('express');
@@ -14,21 +12,34 @@ const KnexSessionStore = require('connect-session-knex')(session);
 const store = new KnexSessionStore({ knex });
 const sessionParser = session({
   secret: '5E14cd8749A',
-  resave: false,
+  rolling: true,
+  resave: true,
   saveUninitialized: true,
-  cookie: { secure: false, httpOnly: true, maxAge: 30 * 24 * 3600 * 1000 },
+  cookie: { secure: false, httpOnly: true, maxAge: 7 * 24 * 3600 * 1000 },
   store,
 });
 const bodyParser = require('body-parser');
 const compression = require('compression');
 const expressValidator = require('express-validator');
 const app = express();
+const cors = require('cors');
 
 app.set('trust proxy', 'loopback');
 app.use(log4js.connectLogger(expressLogger, {
   level: 'auto',
   format: '[:req[x-real-ip]] :method :status :response-timems :url',
 }));
+
+if(config.plugins.webgui.cors) {
+  const whitelist = config.plugins.webgui.cors;
+  const corsOptions = {
+    origin: whitelist,
+    methods: ['GET', 'PUT', 'POST', 'DELETE'],
+    allowedHeaders: ['Content-Type'],
+    credentials: true,
+  };
+  app.use(cors(corsOptions));
+}
 
 app.use(bodyParser.json());
 app.use(expressValidator());
@@ -37,6 +48,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(sessionParser);
 
 app.engine('.html', require('ejs').__express);
+app.engine('.js', require('ejs').__express);
 app.set('view engine', 'html');
 app.set('views', path.resolve('./plugins/webgui/views'));
 
@@ -67,8 +79,13 @@ app.listen(port, host, () => {
 //   }
 // });
 
+app.use((err, req, res, next) => {
+  return res.render('error');
+});
+
 exports.app = app;
 // exports.wss = wss;
 // exports.sessionParser = sessionParser;
+exports.dependence = ['webgui_ref', 'group', 'macAccount'];
 
 appRequire('plugins/webgui/server/route');

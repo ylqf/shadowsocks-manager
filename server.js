@@ -1,13 +1,7 @@
-if(process.env.NODE_ENV !== 'production') {
+if(process.env.NODE_ENV !== 'production' && +process.versions.node[0] < 8) {
   console.log('use babel-core/register');
   require('babel-core/register');
 }
-
-// const Raven = require('raven');
-// Raven.config('https://f54e0eb3c0ab425ab48fe67399eed90a:bc587e24e3134e528a00d52544bb481d@sentry.io/146443').install();
-// Raven.captureMessage('System start.', {
-//   level: 'info',
-// });
 
 require('./init/log');
 
@@ -18,12 +12,11 @@ logger.info('System start.');
 
 process.on('unhandledRejection', (reason, p) => {
   logger.error('Unhandled Rejection at: Promise', p, 'reason:', reason);
-  // Raven.captureException(reason);
 });
 
 process.on('uncaughtException', (err) => {
-  logger.error(`Caught exception: ${err}`);
-  // Raven.captureException(err);
+  logger.error(`Caught exception:`);
+  logger.error(err);
 });
 
 require('./init/utils');

@@ -12,9 +12,12 @@ const config = appRequire('services/config').all();
 const isAlipayUse = config.plugins.alipay && config.plugins.alipay.use;
 const isPaypalUse = config.plugins.paypal && config.plugins.paypal.use;
 const rp = require('request-promise');
+const macAccount = appRequire('plugins/macAccount/index');
+const refOrder = appRequire('plugins/webgui_ref/order');
 
 exports.getAccount = (req, res) => {
-  account.getAccount().then(success => {
+  const group = req.adminInfo.id === 1 ? -1 : req.adminInfo.group;
+  account.getAccount({ group }).then(success => {
     success.forEach(account => {
       account.data = JSON.parse(account.data);
       if(account.type >= 2 && account.type <= 5) {
@@ -102,8 +105,10 @@ exports.addAccount = (req, res) => {
       const limit = +req.body.limit;
       const flow = +req.body.flow;
       const autoRemove = +req.body.autoRemove || 0;
+      const multiServerFlow = +req.body.multiServerFlow || 0;
+      const server = req.body.server ? JSON.stringify(req.body.server) : null;
       return account.addAccount(type, {
-        port, password, time, limit, flow, autoRemove,
+        port, password, time, limit, flow, autoRemove, server, multiServerFlow,
       });
     }
     result.throw();
@@ -146,14 +151,18 @@ exports.changeAccountData = (req, res) => {
   const accountId = req.params.accountId;
   account.editAccount(accountId, {
     type: req.body.type,
-    port: +req.body.port,
+    port: req.body.port,
     password: req.body.password,
     time: req.body.time,
     limit: +req.body.limit,
     flow: +req.body.flow,
     autoRemove: +req.body.autoRemove,
+    multiServerFlow: +req.body.multiServerFlow,
     server: req.body.server,
   }).then(success => {
+    if(req.body.cleanFlow) {
+      flow.cleanAccountFlow(accountId);
+    }
     res.send('success');
   }).catch(err => {
     console.log(err);
@@ -161,26 +170,12 @@ exports.changeAccountData = (req, res) => {
   });
 };
 
-exports.getUsers = (req, res) => {
-  const page = +req.query.page || 1;
-  const pageSize = +req.query.pageSize || 20;
-  const search = req.query.search || '';
-  const sort = req.query.sort || 'id_asc';
-  user.getUserAndPaging({
-    page,
-    pageSize,
-    search,
-    sort,
-  }).then(success => {
-    success.users = success.users.map(m => {
-      return {
-        id: m.id,
-        email: m.email,
-        lastLogin: m.lastLogin,
-        username: m.username,
-      };
-    });
-    return res.send(success);
+exports.changeAccountTime = (req, res) => {
+  const accountId = req.params.accountId;
+  const time = req.body.time;
+  const check = req.body.check;
+  account.editAccountTime(accountId, time, check).then(success => {
+    res.send('success');
   }).catch(err => {
     console.log(err);
     res.status(403).end();
@@ -188,7 +183,8 @@ exports.getUsers = (req, res) => {
 };
 
 exports.getRecentSignUpUsers = (req, res) => {
-  user.getRecentSignUp(5).then(success => {
+  const group = req.adminInfo.id === 1 ? -1 : req.adminInfo.group;
+  user.getRecentSignUp(5, group).then(success => {
     return res.send(success);
   }).catch(err => {
     console.log(err);
@@ -197,7 +193,8 @@ exports.getRecentSignUpUsers = (req, res) => {
 };
 
 exports.getRecentLoginUsers = (req, res) => {
-  user.getRecentLogin(5).then(success => {
+  const group = req.adminInfo.id === 1 ? -1 : req.adminInfo.group;
+  user.getRecentLogin(5, group).then(success => {
     return res.send(success);
   }).catch(err => {
     console.log(err);
@@ -209,8 +206,10 @@ exports.getRecentOrders = (req, res) => {
   if(!isAlipayUse) {
     return res.send([]);
   }
+  const group = req.adminInfo.id === 1 ? -1 : req.adminInfo.group;
   alipay.orderListAndPaging({
     pageSize: 5,
+    group,
   }).then(success => {
     return res.send(success.orders);
   }).catch(err => {
@@ -223,8 +222,10 @@ exports.getPaypalRecentOrders = (req, res) => {
   if(!isPaypalUse) {
     return res.send([]);
   }
+  const group = req.adminInfo.id === 1 ? -1 : req.adminInfo.group;
   paypal.orderListAndPaging({
     pageSize: 5,
+    group,
   }).then(success => {
     return res.send(success.orders);
   }).catch(err => {
@@ -244,6 +245,16 @@ exports.getOneUser = (req, res) => {
       return f.userId === +userId;
     });
     return res.send(userInfo);
+  }).catch(err => {
+    console.log(err);
+    res.status(403).end();
+  });
+};
+
+exports.getOneAdmin = (req, res) => {
+  const userId = req.params.userId;
+  user.getOneAdmin(userId).then(success => {
+    return res.send(success);
   }).catch(err => {
     console.log(err);
     res.status(403).end();
@@ -286,7 +297,12 @@ exports.setUserAccount = (req, res) => {
 exports.deleteUserAccount = (req, res) => {
   const userId = req.params.userId;
   const accountId = req.params.accountId;
-  account.editAccount(accountId, { userId: null }).then(success => {
+  macAccount.getAccountByAccountId(accountId).then(macAccounts => {
+    if(macAccounts.length) {
+      return res.status(403).end();
+    }
+    return account.editAccount(accountId, { userId: null });
+  }).then(success => {
     res.send(success);
   }).catch(err => {
     console.log(err);
@@ -310,6 +326,33 @@ exports.getUserOrders = (req, res) => {
   });
 };
 
+exports.getUserRefOrders = (req, res) => {
+  const userId = +req.params.userId;
+  refOrder.getUserOrders(userId)
+  .then(success => {
+    res.send(success);
+  }).catch(err => {
+    console.log(err);
+    res.status(403).end();
+  });
+};
+
+exports.getPaypalUserOrders = (req, res) => {
+  if(!isPaypalUse) {
+    return res.send([]);
+  }
+  const options = {
+    userId: +req.params.userId,
+  };
+  paypal.orderList(options)
+  .then(success => {
+    res.send(success);
+  }).catch(err => {
+    console.log(err);
+    res.status(403).end();
+  });
+};
+
 exports.getOrders = (req, res) => {
   if(!isAlipayUse) {
     return res.send({
@@ -321,12 +364,40 @@ exports.getOrders = (req, res) => {
     });
   }
   const options = {};
+  if(req.adminInfo.id === 1) {
+    options.group = +req.query.group;
+  } else {
+    options.group = req.adminInfo.group;
+  }
   options.page = +req.query.page || 1;
   options.pageSize = +req.query.pageSize || 20;
   options.search = req.query.search || '';
   options.sort = req.query.sort || 'alipay.createTime_desc';
+  
   options.filter = req.query.filter || '';
   alipay.orderListAndPaging(options)
+  .then(success => {
+    res.send(success);
+  }).catch(err => {
+    console.log(err);
+    res.status(403).end();
+  });
+};
+
+exports.getRefOrders = (req, res) => {
+  const options = {};
+  if(req.adminInfo.id === 1) {
+    options.group = +req.query.group;
+  } else {
+    options.group = req.adminInfo.group;
+  }
+  options.page = +req.query.page || 1;
+  options.pageSize = +req.query.pageSize || 20;
+  options.search = req.query.search || '';
+  options.sort = req.query.sort || 'webgui_ref_time.createTime_desc';
+  
+  options.filter = req.query.filter || '';
+  refOrder.orderListAndPaging(options)
   .then(success => {
     res.send(success);
   }).catch(err => {
@@ -346,6 +417,11 @@ exports.getPaypalOrders = (req, res) => {
     });
   }
   const options = {};
+  if(req.adminInfo.id === 1) {
+    options.group = +req.query.group;
+  } else {
+    options.group = req.adminInfo.group;
+  }
   options.page = +req.query.page || 1;
   options.pageSize = +req.query.pageSize || 20;
   options.search = req.query.search || '';
@@ -361,31 +437,8 @@ exports.getPaypalOrders = (req, res) => {
 };
 
 exports.getUserPortLastConnect = (req, res) => {
-  const port = +req.params.port;
-  flow.getUserPortLastConnect(port).then(success => {
-    return res.send(success);
-  }).catch(err => {
-    console.log(err);
-    res.status(403).end();
-  });
-};
-
-exports.addUser = (req, res) => {
-  req.checkBody('email', 'Invalid email').notEmpty();
-  req.checkBody('password', 'Invalid password').notEmpty();
-  req.getValidationResult().then(result => {
-    if(result.isEmpty()) {
-      const email = req.body.email;
-      const password = req.body.password;
-      return user.add({
-        username: email,
-        email,
-        password,
-        type: 'normal',
-      });
-    }
-    result.throw();
-  }).then(success => {
+  const accountId = +req.params.accountId;
+  flow.getUserPortLastConnect(accountId).then(success => {
     return res.send(success);
   }).catch(err => {
     console.log(err);
@@ -433,7 +486,7 @@ exports.getAccountIp = (req, res) => {
     const port = accountInfo.port;
     return manager.send({
       command: 'ip',
-      port,
+      port: port + serverInfo.shift,
     }, {
       host: serverInfo.host,
       port: serverInfo.port,
@@ -457,14 +510,14 @@ exports.getAccountIpFromAllServer = (req, res) => {
     const getIp = (port, serverInfo) => {
       return manager.send({
         command: 'ip',
-        port,
+        port: port + serverInfo.shift,
       }, {
         host: serverInfo.host,
         port: serverInfo.port,
         password: serverInfo.password,
       });
     };
-    promiseArray = servers.map(server => {
+    const promiseArray = servers.map(server => {
       return getIp(accountInfo.port, server).catch(err => []);
     });
     return Promise.all(promiseArray);
@@ -484,11 +537,10 @@ exports.getAccountIpFromAllServer = (req, res) => {
 
 exports.getAccountIpInfo = (req, res) => {
   const ip = req.params.ip;
-  const uri = `http://ip.taobao.com/service/getIpInfo.php?ip=${ ip }`;
 
   const taobao = ip => {
     const uri = `http://ip.taobao.com/service/getIpInfo.php?ip=${ ip }`;
-    return rp({ uri }).then(success => {
+    return rp({ uri, timeout: 10 * 1000 }).then(success => {
       const decode = (s) => {
         return unescape(s.replace(/\\u/g, '%u'));
       };
@@ -504,24 +556,61 @@ exports.getAccountIpInfo = (req, res) => {
 
   const sina = ip => {
     const uri = `https://int.dpool.sina.com.cn/iplookup/iplookup.php?format=js&ip=${ ip }`;
-    return rp({ uri }).then(success => {
+    return rp({ uri, timeout: 10 * 1000 }).then(success => {
       const decode = (s) => {
         return unescape(s.replace(/\\u/g, '%u'));
       };
       return JSON.parse(decode(success.match(/^var remote_ip_info = ([\s\S]+);$/)[1]));
     }).then(success => {
-      // if(success.code !== 0) {
-      //   return Promise.reject(success.code);
-      // }
       const result = [success.province + success.city, success.isp];
       return result;
     });
   };
-  const getIpFunction = [taobao, sina];
-  const random = +Math.random().toString().substr(2) % getIpFunction.length;
-  getIpFunction[random](ip).then(success => {
+
+  const ipip = ip => {
+    const uri = `https://freeapi.ipip.net/${ ip }`;
+    return rp({ uri, timeout: 10 * 1000 }).then(success => {
+      const decode = (s) => {
+        return unescape(s.replace(/\\u/g, '%u'));
+      };
+      return JSON.parse(decode(success));
+    }).then(success => {
+      const result = [success[1] + success[2], success[4]];
+      return result;
+    });
+  };
+
+  const getIpFunction = ip => {
+    return taobao(ip).catch(() => {
+      return sina(ip);
+    }).catch(() => {
+      return ipip(ip);
+    });
+  };
+  getIpFunction(ip)
+  .then(success => {
     return res.send(success);
   }).catch(err => {
     return res.send(['', '']);
+  });
+};
+
+exports.getAllMacAccount = (req, res) => {
+  const group = req.adminInfo.id === 1 ? -1 : req.adminInfo.group;
+  macAccount.getAllAccount(group).then(success => {
+    return res.send(success);
+  }).catch(err => {
+    console.log(err);
+    res.status(403).end();
+  });
+};
+
+exports.resetAccountFlow = (req, res) => {
+  const accountId = +req.params.accountId;
+  flow.cleanAccountFlow(accountId).then(success => {
+    return res.send('success');
+  }).catch(err => {
+    console.log(err);
+    res.status(403).end();
   });
 };
